@@ -22,7 +22,7 @@ class Embedding(nn.Module):
         null_value=None,
         pad_value=None,
         is_encoder: bool = True,
-        position_emb="abs",
+        position_emb="t2v",
         data_dropout=None,
         max_seq_len=None,
         use_val: bool = True,

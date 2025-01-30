@@ -295,38 +295,53 @@ class Spacetimeformer_Forecaster(stf.Forecaster):
             return forecast_output, recon_output, (logits, labels), attn
         return forecast_output, recon_output, (logits, labels)
 
-    def validation_epoch_end(self, outs):
+    def on_validation_epoch_end(self):
         total = 0
         count = 0
-        for dict_ in outs:
+        for dict_ in self.validation_step_outputs:
             if "forecast_loss" in dict_:
                 total += dict_["forecast_loss"].mean()
                 count += 1
-        avg_val_loss = total / count
-        # manually tell scheduler it's the end of an epoch to activate
-        # ReduceOnPlateau functionality from a step-based scheduler
-        self.scheduler.step(avg_val_loss, is_end_epoch=True)
+
+        if count > 0:
+            avg_val_loss = total / count
+            self.log("val_loss", avg_val_loss)
+
+            # Indicar a ReduceLROnPlateau que es fin de epoch
+            self.scheduler.step(avg_val_loss, is_end_epoch=True)
+
+        # Limpiar la lista de outputs para la siguiente epoch
+        self.validation_step_outputs = []
 
     def training_step_end(self, outs):
         self._log_stats("train", outs)
         self.scheduler.step()
         return {"loss": outs["loss"].mean()}
 
-    def configure_optimizers(self):
-        self.optimizer = torch.optim.AdamW(
-            self.parameters(),
-            lr=self.base_lr,
-            weight_decay=self.l2_coeff,
-        )
-        self.scheduler = stf.lr_scheduler.WarmupReduceLROnPlateau(
-            self.optimizer,
-            init_lr=self.init_lr,
-            peak_lr=self.base_lr,
-            warmup_steps=self.warmup_steps,
-            patience=3,
-            factor=self.decay_factor,
-        )
-        return [self.optimizer], [self.scheduler]
+def configure_optimizers(self):
+    self.optimizer = torch.optim.AdamW(
+        self.parameters(),
+        lr=self.base_lr,
+        weight_decay=self.l2_coeff,
+    )
+    self.scheduler = stf.lr_scheduler.WarmupReduceLROnPlateau(
+        self.optimizer,
+        init_lr=self.init_lr,
+        peak_lr=self.base_lr,
+        warmup_steps=self.warmup_steps,
+        patience=3,
+        factor=self.decay_factor,
+    )
+
+    return {
+        "optimizer": self.optimizer,
+        "lr_scheduler": {
+            "scheduler": self.scheduler,
+            "monitor": "val_loss",  # Debe coincidir con la métrica registrada con `self.log`
+            "interval": "epoch",  # Se actualiza por epoch
+            "frequency": 1,  # Se ejecuta cada epoch
+        },
+    }
 
     @classmethod
     def add_cli(self, parser):
